@@ -8,6 +8,7 @@ import type { ResourceDiagnostic } from "./diagnostics.ts";
 export type { ResourceCollision, ResourceDiagnostic } from "./diagnostics.ts";
 
 import { canonicalizePath, isLocalPath, resolvePath } from "../utils/paths.ts";
+import { type BuiltinExtensionOptions, getBuiltinExtensionFactories } from "./builtin-extensions/index.ts";
 import { createEventBus, type EventBus } from "./event-bus.ts";
 import { createExtensionRuntime, loadExtensionFromFactory, loadExtensions } from "./extensions/loader.ts";
 import type { Extension, ExtensionFactory, ExtensionRuntime, LoadExtensionsResult } from "./extensions/types.ts";
@@ -126,6 +127,13 @@ export interface DefaultResourceLoaderOptions {
 	additionalPromptTemplatePaths?: string[];
 	additionalThemePaths?: string[];
 	extensionFactories?: ExtensionFactory[];
+	/**
+	 * Controls which always-on built-in extensions (hooks, mcp, todo) are
+	 * registered. Omit to enable all (each self-detects its config); set a key to
+	 * false to disable that built-in. Set the whole option to false to disable all
+	 * built-ins.
+	 */
+	builtinExtensions?: BuiltinExtensionOptions | false;
 	noExtensions?: boolean;
 	noSkills?: boolean;
 	noPromptTemplates?: boolean;
@@ -221,7 +229,11 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.additionalSkillPaths = options.additionalSkillPaths ?? [];
 		this.additionalPromptTemplatePaths = options.additionalPromptTemplatePaths ?? [];
 		this.additionalThemePaths = options.additionalThemePaths ?? [];
-		this.extensionFactories = options.extensionFactories ?? [];
+		const builtinFactories =
+			options.builtinExtensions === false
+				? []
+				: getBuiltinExtensionFactories(this.resolveBuiltinOptions(options.builtinExtensions ?? {}));
+		this.extensionFactories = [...builtinFactories, ...(options.extensionFactories ?? [])];
 		this.noExtensions = options.noExtensions ?? false;
 		this.noSkills = options.noSkills ?? false;
 		this.noPromptTemplates = options.noPromptTemplates ?? false;
@@ -872,6 +884,24 @@ export class DefaultResourceLoader implements ResourceLoader {
 			const message = error instanceof Error ? error.message : "failed to load theme";
 			diagnostics.push({ type: "warning", message, path: filePath });
 		}
+	}
+
+	/**
+	 * Resolve which built-in extensions to enable. Built-ins are off by default;
+	 * HCP (or a user) opts in via `settings.builtinExtensions` (a list of feature
+	 * names: "hooks" | "mcp" | "todo"). Explicit `options.builtinExtensions` flags
+	 * take precedence over settings.
+	 */
+	private resolveBuiltinOptions(base: BuiltinExtensionOptions): BuiltinExtensionOptions {
+		const enabled = new Set<string>([
+			...(this.settingsManager.getGlobalSettings().builtinExtensions ?? []),
+			...(this.settingsManager.getProjectSettings().builtinExtensions ?? []),
+		]);
+		return {
+			hooks: base.hooks ?? enabled.has("hooks"),
+			mcp: base.mcp ?? enabled.has("mcp"),
+			todo: base.todo ?? enabled.has("todo"),
+		};
 	}
 
 	private async loadExtensionFactories(runtime: ExtensionRuntime): Promise<{

@@ -1,0 +1,54 @@
+import type { ExtensionAPI } from "../../../extensions/types.ts";
+import type { HookModuleContext } from "../hook-context.ts";
+import type { HookExecutionContext, HookMatcherValue, HookRunResult, NotifyFn, SettingsFile } from "../types.ts";
+import { triggerSimpleHooks } from "./shared.ts";
+
+export async function triggerSessionHooks(
+	eventName: "SessionStart" | "SessionEnd",
+	matcherValue: HookMatcherValue<"SessionStart"> | HookMatcherValue<"SessionEnd">,
+	context: HookExecutionContext,
+	settings: SettingsFile | undefined,
+	notify?: NotifyFn,
+): Promise<HookRunResult> {
+	return triggerSimpleHooks(eventName, matcherValue, context, settings, notify);
+}
+
+export function registerSessionHooks(pi: ExtensionAPI, shared: HookModuleContext) {
+	// SessionStart mapping:
+	//   startup -> session_start(reason="startup")
+	//   new     -> session_start(reason="new")
+	//   resume  -> session_start(reason="resume")
+	//   compact -> session_compact
+	// SessionEnd mapping:
+	//   other   -> session_shutdown
+	pi.on("session_start", async (event, ctx) => {
+		shared.initSettings(ctx.cwd);
+
+		if (event.reason === "startup" || event.reason === "new") {
+			await shared.triggerSessionStartHook("startup", ctx);
+			return;
+		}
+
+		if (event.reason === "resume") {
+			await shared.triggerSessionStartHook("resume", ctx);
+		}
+	});
+
+	pi.on("session_shutdown", async (_event, ctx) => {
+		const reason = "other";
+
+		// SessionEnd is always triggered by session_shutdown; matcher only uses "other".
+		await triggerSessionHooks(
+			"SessionEnd",
+			reason,
+			{
+				sessionId: shared.getSessionId(ctx),
+				cwd: ctx.cwd,
+				hookEventName: "SessionEnd",
+				reason,
+			},
+			shared.currentSettings,
+			(msg, type) => shared.notify(ctx, msg, type),
+		);
+	});
+}

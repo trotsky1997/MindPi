@@ -438,4 +438,28 @@ describe("parseArgs", () => {
 			expect(result.messages).toEqual(["Do the task"]);
 		});
 	});
+
+	describe("--mode acp + TCP flags", () => {
+		test("parses --mode acp", () => {
+			expect(parseArgs(["--mode", "acp"]).mode).toBe("acp");
+		});
+
+		test("parses --acp-port and --acp-host", () => {
+			const result = parseArgs(["--mode", "acp", "--acp-port", "9777", "--acp-host", "0.0.0.0"]);
+			expect(result.acpPort).toBe(9777);
+			expect(result.acpHost).toBe("0.0.0.0");
+			expect(result.diagnostics.filter((d) => d.type === "error")).toHaveLength(0);
+		});
+
+		test("rejects an invalid --acp-port with a diagnostic", () => {
+			const result = parseArgs(["--mode", "acp", "--acp-port", "notaport"]);
+			expect(result.acpPort).toBeUndefined();
+			expect(result.diagnostics.some((d) => d.type === "error" && /acp-port/.test(d.message))).toBe(true);
+		});
+
+		test("rejects out-of-range ports", () => {
+			expect(parseArgs(["--acp-port", "0"]).acpPort).toBeUndefined();
+			expect(parseArgs(["--acp-port", "70000"]).acpPort).toBeUndefined();
+		});
+	});
 });

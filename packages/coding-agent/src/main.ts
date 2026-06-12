@@ -26,6 +26,7 @@ import { formatNoModelsAvailableMessage } from "./core/auth-guidance.ts";
 import { AuthStorage } from "./core/auth-storage.ts";
 import { exportFromFile } from "./core/export-html/index.ts";
 import type { ExtensionFactory } from "./core/extensions/types.ts";
+import { applyHcpPreparation, maybePrepareHcp } from "./core/hcp/integration.ts";
 import { configureHttpDispatcher } from "./core/http-dispatcher.ts";
 import type { ModelRegistry } from "./core/model-registry.ts";
 import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.ts";
@@ -43,7 +44,7 @@ import { SettingsManager } from "./core/settings-manager.ts";
 import { printTimings, resetTimings, time } from "./core/timings.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "./core/trust-manager.ts";
 import { runMigrations, showDeprecationWarnings } from "./migrations.ts";
-import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.ts";
+import { InteractiveMode, runAcpMode, runPrintMode, runRpcMode } from "./modes/index.ts";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.ts";
 import { handleConfigCommand, handlePackageCommand } from "./package-manager-cli.ts";
 import { isLocalPath, normalizePath, resolvePath } from "./utils/paths.ts";
@@ -99,6 +100,9 @@ function resolveAppMode(parsed: Args, stdinIsTTY: boolean, stdoutIsTTY: boolean)
 	if (parsed.mode === "rpc") {
 		return "rpc";
 	}
+	if (parsed.mode === "acp") {
+		return "acp";
+	}
 	if (parsed.mode === "json") {
 		return "json";
 	}
@@ -108,7 +112,7 @@ function resolveAppMode(parsed: Args, stdinIsTTY: boolean, stdoutIsTTY: boolean)
 	return "interactive";
 }
 
-function toPrintOutputMode(appMode: AppMode): Exclude<Mode, "rpc"> {
+function toPrintOutputMode(appMode: AppMode): Exclude<Mode, "rpc" | "acp"> {
 	return appMode === "json" ? "json" : "text";
 }
 
@@ -492,6 +496,31 @@ export async function main(args: string[], options?: MainOptions) {
 		process.exit(0);
 	}
 
+	// HCP (Harness Configuration Protocol): translate a TOML config into pi's
+	// native runtime (env + agent dir artifacts + synthetic args) before any
+	// agent-dir-derived paths are read. Runs in-process; no subprocess.
+	const hcpPreparation = maybePrepareHcp(parsed);
+	if (hcpPreparation) {
+		if (parsed.hcpDryRun) {
+			console.log(
+				JSON.stringify(
+					{
+						configPath: hcpPreparation.configPath,
+						cwd: hcpPreparation.cwd,
+						agentDir: hcpPreparation.agentDir,
+						envKeys: Object.keys(hcpPreparation.env).sort(),
+						syntheticArgs: hcpPreparation.syntheticArgs,
+						warnings: hcpPreparation.warnings,
+					},
+					null,
+					2,
+				),
+			);
+			process.exit(0);
+		}
+		applyHcpPreparation(parsed, hcpPreparation);
+	}
+
 	if (parsed.export) {
 		let result: string;
 		try {
@@ -512,8 +541,8 @@ export async function main(args: string[], options?: MainOptions) {
 		takeOverStdout();
 	}
 
-	if (parsed.mode === "rpc" && parsed.fileArgs.length > 0) {
-		console.error(chalk.red("Error: @file arguments are not supported in RPC mode"));
+	if ((parsed.mode === "rpc" || parsed.mode === "acp") && parsed.fileArgs.length > 0) {
+		console.error(chalk.red("Error: @file arguments are not supported in RPC/ACP mode"));
 		process.exit(1);
 	}
 
@@ -736,7 +765,7 @@ export async function main(args: string[], options?: MainOptions) {
 
 	// Read piped stdin content (if any) - skip for RPC mode which uses stdin for JSON-RPC
 	let stdinContent: string | undefined;
-	if (appMode !== "rpc") {
+	if (appMode !== "rpc" && appMode !== "acp") {
 		stdinContent = await readPipedStdin();
 		if (stdinContent !== undefined && appMode === "interactive") {
 			appMode = "print";
@@ -765,7 +794,9 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 	time("createAgentSession");
 
-	if (appMode !== "interactive" && !session.model) {
+	// ACP reports missing-model as an auth-required response to the client, so
+	// don't hard-exit here the way rpc/print do.
+	if (appMode !== "interactive" && appMode !== "acp" && !session.model) {
 		console.error(chalk.red(formatNoModelsAvailableMessage()));
 		process.exit(1);
 	}
@@ -779,6 +810,9 @@ export async function main(args: string[], options?: MainOptions) {
 	if (appMode === "rpc") {
 		printTimings();
 		await runRpcMode(runtime);
+	} else if (appMode === "acp") {
+		printTimings();
+		await runAcpMode(runtime, { createRuntime, sessionDir, port: parsed.acpPort, host: parsed.acpHost });
 	} else if (appMode === "interactive") {
 		const interactiveMode = new InteractiveMode(runtime, {
 			migratedProviders,

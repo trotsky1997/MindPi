@@ -7,7 +7,7 @@ import chalk from "chalk";
 import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR, ENV_SESSION_DIR } from "../config.ts";
 import type { ExtensionFlag } from "../core/extensions/types.ts";
 
-export type Mode = "text" | "json" | "rpc";
+export type Mode = "text" | "json" | "rpc" | "acp";
 
 export interface Args {
 	provider?: string;
@@ -46,6 +46,16 @@ export interface Args {
 	listModels?: string | true;
 	offline?: boolean;
 	verbose?: boolean;
+	/** Path to an HCP (Harness Configuration Protocol) TOML config to launch from. */
+	hcp?: string;
+	/** Prepare the HCP runtime and print launch metadata without starting a session. */
+	hcpDryRun?: boolean;
+	/** Fail validation for HCP workspace entries that need a staging backend. */
+	hcpStrictWorkspace?: boolean;
+	/** With --mode acp: serve ACP over TCP on this port instead of stdio. */
+	acpPort?: number;
+	/** With --mode acp --acp-port: bind address (default 127.0.0.1). */
+	acpHost?: string;
 	projectTrustOverride?: boolean;
 	messages: string[];
 	fileArgs: string[];
@@ -77,7 +87,7 @@ export function parseArgs(args: string[]): Args {
 			result.version = true;
 		} else if (arg === "--mode" && i + 1 < args.length) {
 			const mode = args[++i];
-			if (mode === "text" || mode === "json" || mode === "rpc") {
+			if (mode === "text" || mode === "json" || mode === "rpc" || mode === "acp") {
 				result.mode = mode;
 			}
 		} else if (arg === "--continue" || arg === "-c") {
@@ -183,6 +193,21 @@ export function parseArgs(args: string[]): Args {
 			result.projectTrustOverride = false;
 		} else if (arg === "--offline") {
 			result.offline = true;
+		} else if ((arg === "--hcp" || arg === "--hcp-config") && i + 1 < args.length) {
+			result.hcp = args[++i];
+		} else if (arg === "--hcp-dry-run") {
+			result.hcpDryRun = true;
+		} else if (arg === "--hcp-strict-workspace") {
+			result.hcpStrictWorkspace = true;
+		} else if (arg === "--acp-port" && i + 1 < args.length) {
+			const port = Number(args[++i]);
+			if (Number.isInteger(port) && port > 0 && port < 65536) {
+				result.acpPort = port;
+			} else {
+				result.diagnostics.push({ type: "error", message: `Invalid --acp-port: ${args[i]}` });
+			}
+		} else if (arg === "--acp-host" && i + 1 < args.length) {
+			result.acpHost = args[++i];
 		} else if (arg.startsWith("@")) {
 			result.fileArgs.push(arg.slice(1)); // Remove @ prefix
 		} else if (arg.startsWith("--")) {
@@ -240,7 +265,9 @@ ${chalk.bold("Options:")}
   --api-key <key>                API key (defaults to env vars)
   --system-prompt <text>         System prompt (default: coding assistant prompt)
   --append-system-prompt <text>  Append text or file contents to the system prompt (can be used multiple times)
-  --mode <mode>                  Output mode: text (default), json, or rpc
+  --mode <mode>                  Output mode: text (default), json, rpc, or acp (Agent Client Protocol)
+  --acp-port <port>              With --mode acp: serve ACP over TCP on this port instead of stdio
+  --acp-host <host>              With --acp-port: bind address (default: 127.0.0.1)
   --print, -p                    Non-interactive mode: process prompt and exit
   --continue, -c                 Continue previous session
   --resume, -r                   Select a session to resume
@@ -274,6 +301,9 @@ ${chalk.bold("Options:")}
   --approve, -a                  Trust project-local files for this run
   --no-approve, -na              Ignore project-local files for this run
   --offline                      Disable startup network operations (same as PI_OFFLINE=1)
+  --hcp <file>                   Launch from an HCP (Harness Configuration Protocol) TOML config
+  --hcp-dry-run                  Prepare the HCP runtime and print metadata without starting a session
+  --hcp-strict-workspace         Fail validation for HCP workspace entries needing a staging backend
   --help, -h                     Show this help
   --version, -v                  Show version number
 

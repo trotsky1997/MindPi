@@ -75,6 +75,14 @@
         {
           "title": "Custom Providers",
           "path": "custom-provider.md"
+        },
+        {
+          "title": "HCP Configs",
+          "path": "hcp.md"
+        },
+        {
+          "title": "ACP Mode",
+          "path": "acp.md"
         }
       ]
     },

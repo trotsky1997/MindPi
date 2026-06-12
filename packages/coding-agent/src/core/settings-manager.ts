@@ -119,6 +119,8 @@ export interface Settings {
 	sessionDir?: string; // Custom session storage directory (same format as --session-dir CLI flag)
 	httpIdleTimeoutMs?: number; // HTTP header/body idle timeout in milliseconds; 0 disables it
 	websocketConnectTimeoutMs?: number; // WebSocket connect/open handshake timeout in milliseconds; 0 disables it
+	hcpDisabledBuiltins?: string[]; // Deprecated: superseded by builtinExtensions
+	builtinExtensions?: string[]; // Built-in extensions to enable: "hooks" | "mcp" | "todo" (off by default; HCP opts in)
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
