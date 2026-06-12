@@ -9,4 +9,5 @@
 
 export type { PrepareHcpRuntimeOptions } from "./prepare.ts";
 export { loadHcpToml, prepareHcpRuntime, resolveDefaultHcpConfigPath } from "./prepare.ts";
+export { dumpHcpToml, writeHcpToml } from "./serialize.ts";
 export type { HcpConfig, HcpPreparation, HcpSyntheticArgs } from "./types.ts";

@@ -87,3 +87,16 @@ Shareable HCP files must not contain secret values. `models.json` stores only th
 `model.api_key` is written to `auth.json` (mode `0600`) and exported into the
 runtime environment under a generated `PI_HCP_<PROVIDER>_API_KEY` name. Embedded
 resources never carry secrets.
+
+## Programmatic API
+
+The `core/hcp` module both reads and writes HCP TOML:
+
+- `loadHcpToml(path)` — parse + version-gate a config file into an `HcpConfig`.
+- `dumpHcpToml(config)` — serialize an `HcpConfig` back to TOML text (defaults
+  `version` to 1; drops `null`/`undefined`; rejects non-finite numbers and
+  non-TOML value types). `writeHcpToml(path, config)` writes it to disk.
+- `prepareHcpRuntime(path, opts)` — the full translation into native artifacts.
+
+Parse/serialize round-trips: `loadHcpToml` of a `dumpHcpToml` output reproduces
+the config, and `dumpHcpToml` is idempotent across a parse.
