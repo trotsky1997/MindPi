@@ -499,7 +499,7 @@ export async function main(args: string[], options?: MainOptions) {
 	// HCP (Harness Configuration Protocol): translate a TOML config into pi's
 	// native runtime (env + agent dir artifacts + synthetic args) before any
 	// agent-dir-derived paths are read. Runs in-process; no subprocess.
-	const hcpPreparation = maybePrepareHcp(parsed);
+	const hcpPreparation = await maybePrepareHcp(parsed);
 	if (hcpPreparation) {
 		if (parsed.hcpDryRun) {
 			console.log(

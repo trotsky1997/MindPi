@@ -15,6 +15,7 @@ import { dirname, join, resolve } from "node:path";
 import TOML from "@iarna/toml";
 import { prepareSessionFromConfig } from "./session.ts";
 import type { HcpConfig, HcpPreparation, HcpSyntheticArgs } from "./types.ts";
+import { lookupModelsDevModel, modelsDevToHcpDefaults } from "./models-dev.ts";
 import {
 	asBool,
 	asString,
@@ -65,7 +66,7 @@ export interface PrepareHcpRuntimeOptions {
 	strictWorkspace?: boolean;
 }
 
-export function prepareHcpRuntime(configPath: string, options: PrepareHcpRuntimeOptions = {}): HcpPreparation {
+export async function prepareHcpRuntime(configPath: string, options: PrepareHcpRuntimeOptions = {}): Promise<HcpPreparation> {
 	const resolvedConfigPath = resolve(configPath);
 	const config = loadHcpToml(resolvedConfigPath);
 	const warnings: string[] = [];
@@ -98,7 +99,7 @@ export function prepareHcpRuntime(configPath: string, options: PrepareHcpRuntime
 	const settings = buildSettings(config, cwd);
 	writeJson(join(agentDir, "settings.json"), settings);
 
-	const modelsJson = buildModelsJson(config, env);
+	const modelsJson = await buildModelsJson(config, env);
 	if (modelsJson) writeJson(join(agentDir, "models.json"), modelsJson);
 	buildAuthJson(config, env, agentDir);
 	writeMcpConfig(config, cwd, agentDir, warnings);
@@ -391,12 +392,25 @@ function noToolsMode(config: HcpConfig, tools: string[] | undefined): "all" | "b
 	return undefined;
 }
 
-function buildModelsJson(config: HcpConfig, env: NodeJS.ProcessEnv): Record<string, unknown> | undefined {
+async function buildModelsJson(config: HcpConfig, env: NodeJS.ProcessEnv): Promise<Record<string, unknown> | undefined> {
 	const model = section(config, "model");
 	const provider = asString(model.provider);
 	const id =
 		asString(model.id) ?? asString(model.model) ?? envLookup(model.id_env ?? model.model_env ?? model.modelEnv, env);
 	if (!provider || !id) return undefined;
+
+	// Resolve models.dev defaults when models_dev field is present.
+	// Explicit HCP fields take precedence over models.dev defaults.
+	const modelsDevId = asString(model.models_dev);
+	let modelsDevDefaults: Record<string, unknown> = {};
+	if (modelsDevId) {
+		const mdModel = await lookupModelsDevModel(modelsDevId).catch(() => undefined);
+		if (mdModel) modelsDevDefaults = modelsDevToHcpDefaults(mdModel);
+	}
+
+	// Merge: models.dev defaults < explicit HCP model fields
+	const effectiveModel = { ...modelsDevDefaults, ...model };
+
 	const needs = [
 		"base_url",
 		"baseUrl",
@@ -414,22 +428,29 @@ function buildModelsJson(config: HcpConfig, env: NodeJS.ProcessEnv): Record<stri
 		"maxTokens",
 		"auth_header",
 		"authHeader",
+		"models_dev",
 	];
-	if (!needs.some((key) => key in model)) return undefined;
+	if (!needs.some((key) => key in effectiveModel)) return undefined;
 
 	const baseUrl =
-		asString(model.base_url) ?? asString(model.baseUrl) ?? envLookup(model.base_url_env ?? model.baseUrlEnv, env);
-	const apiKeyEnv = asString(model.api_key_env) ?? asString(model.apiKeyEnv);
+		asString(effectiveModel.base_url) ?? asString(effectiveModel.baseUrl) ?? envLookup(effectiveModel.base_url_env ?? effectiveModel.baseUrlEnv, env);
+	const apiKeyEnv = asString(effectiveModel.api_key_env) ?? asString(effectiveModel.apiKeyEnv);
 	if (!baseUrl) throw new Error("model.base_url or model.base_url_env is required for custom provider models");
 	if (!apiKeyEnv) throw new Error("model.api_key_env is required for custom provider models");
 	const api =
-		asString(model.api) ??
-		asString(model.api_type) ??
-		asString(model.apiType) ??
-		asString(model.llm_api) ??
-		asString(model.llmApi) ??
+		asString(effectiveModel.api) ??
+		asString(effectiveModel.api_type) ??
+		asString(effectiveModel.apiType) ??
+		asString(effectiveModel.llm_api) ??
+		asString(effectiveModel.llmApi) ??
 		"openai-completions";
-	const compat = deepMerge(DEFAULT_PROVIDER_COMPAT, section(model, "compat"));
+
+	// Compat: derive supportsReasoningEffort from models.dev reasoning_options if not explicit
+	const explicitCompat = section(model, "compat");
+	const baseCompat = { ...DEFAULT_PROVIDER_COMPAT };
+	if (modelsDevDefaults._reasoningEffortSupported && !("supportsReasoningEffort" in explicitCompat))
+		baseCompat.supportsReasoningEffort = true;
+	const compat = deepMerge(baseCompat, explicitCompat);
 	const modelCompat = section(model, "model_compat");
 	return {
 		providers: {
@@ -437,20 +458,20 @@ function buildModelsJson(config: HcpConfig, env: NodeJS.ProcessEnv): Record<stri
 				baseUrl,
 				api,
 				apiKey: apiKeyEnv,
-				authHeader: model.auth_header ?? model.authHeader ?? true,
+				authHeader: effectiveModel.auth_header ?? effectiveModel.authHeader ?? true,
 				compat,
-				...(isObject(model.headers) ? { headers: model.headers } : {}),
+				...(isObject(effectiveModel.headers) ? { headers: effectiveModel.headers } : {}),
 				models: [
 					{
 						id,
-						name: asString(model.name) ?? id,
+						name: asString(effectiveModel.name) ?? id,
 						api,
 						baseUrl,
-						reasoning: model.reasoning === true,
-						input: stringList(model.input).length ? stringList(model.input) : ["text"],
-						contextWindow: Number(model.context_window ?? model.contextWindow ?? 128000),
-						maxTokens: Number(model.max_tokens ?? model.maxTokens ?? 16384),
-						cost: isObject(model.cost) ? model.cost : { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+						reasoning: effectiveModel.reasoning === true,
+						input: stringList(effectiveModel.input).length ? stringList(effectiveModel.input) : ["text"],
+						contextWindow: Number(effectiveModel.context_window ?? effectiveModel.contextWindow ?? 128000),
+						maxTokens: Number(effectiveModel.max_tokens ?? effectiveModel.maxTokens ?? 16384),
+						cost: isObject(effectiveModel.cost) ? effectiveModel.cost : { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 						compat: Object.keys(modelCompat).length ? deepMerge(compat, modelCompat) : compat,
 					},
 				],
@@ -469,7 +490,7 @@ function buildAuthJson(config: HcpConfig, env: NodeJS.ProcessEnv, agentDir: stri
 	const authPath = explicitPath ? resolvePath(explicitPath, agentDir) : join(agentDir, "auth.json");
 	let data = readJsonIfExists(authPath);
 	if (provider && apiKey) data = { ...data, [provider]: { type: "api_key", key: apiKey } };
-	else if (provider && apiKeyEnv && !buildModelsJson(config, env) && env[apiKeyEnv])
+	else if (provider && apiKeyEnv && !(model.base_url ?? model.baseUrl ?? model.base_url_env ?? model.baseUrlEnv ?? model.models_dev) && env[apiKeyEnv])
 		data = { ...data, [provider]: { type: "api_key", key: apiKeyEnv } };
 	if (Object.keys(data).length) writeJson(authPath, data, 0o600);
 }

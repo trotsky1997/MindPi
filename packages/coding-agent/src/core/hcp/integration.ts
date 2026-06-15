@@ -16,7 +16,7 @@ import { type HcpPreparation, prepareHcpRuntime } from "./index.ts";
  * Prepare an HCP runtime when `--hcp` is given. Returns undefined when no HCP
  * config is in play. On preparation failure, prints the error and exits.
  */
-export function maybePrepareHcp(parsed: Args): HcpPreparation | undefined {
+export async function maybePrepareHcp(parsed: Args): Promise<HcpPreparation | undefined> {
 	// HCP only activates on an explicit flag. We deliberately do NOT auto-detect a
 	// stray hcp.toml in the cwd: this is the general `pi` CLI, and silently
 	// switching into HCP mode because a file happens to be named hcp.toml would be
@@ -26,7 +26,7 @@ export function maybePrepareHcp(parsed: Args): HcpPreparation | undefined {
 	if (!configPath) return undefined;
 
 	try {
-		return prepareHcpRuntime(configPath, { strictWorkspace: parsed.hcpStrictWorkspace });
+		return await prepareHcpRuntime(configPath, { strictWorkspace: parsed.hcpStrictWorkspace });
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
 		console.error(chalk.red(`Error: failed to prepare HCP runtime from ${configPath}: ${message}`));
