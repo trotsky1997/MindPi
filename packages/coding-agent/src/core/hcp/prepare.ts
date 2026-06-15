@@ -236,6 +236,13 @@ function buildSettings(config: HcpConfig, cwd: string): Record<string, unknown> 
 	const hooks = normalizeHooks(config.hooks, cwd);
 	if (hooks) settings = deepMerge(settings, { hooks });
 
+	// Forward [provider_options] into settings.providerOptions so the runtime
+	// can pass temperature, tool_choice, parallel_tool_calls, etc. to the API.
+	const providerOptions = mergedSection(config, "provider_options", "providerOptions");
+	if (Object.keys(providerOptions).length) {
+		settings = deepMerge(settings, { providerOptions });
+	}
+
 	return settings;
 }
 
@@ -578,6 +585,38 @@ function applyEmbeddedReference(config: HcpConfig, entry: Record<string, unknown
 		const resources = section(config, "resources");
 		resources.agents_files = dedupe([...stringList(resources.agents_files), relOrAbs]);
 		config.resources = resources;
+	} else if (kind === "system_prompt") {
+		// Overwrite the system_prompt field so buildSyntheticArgs picks it up.
+		const resources = section(config, "resources");
+		resources.system_prompt_path = relOrAbs;
+		config.resources = resources;
+	} else if (kind === "append_system_prompt") {
+		const resources = section(config, "resources");
+		const existing = stringList(resources.append_system_prompt_paths ?? resources.appendSystemPromptPaths);
+		resources.append_system_prompt_paths = dedupe([...existing, relOrAbs]);
+		config.resources = resources;
+	} else if (kind === "hook") {
+		// Embedded hook files land in agentDir/hooks/<event>/<filename>.
+		// We defer to normalizeHooks — here we just register the path as an
+		// extension so the hooks built-in can pick it up via its config file.
+		// The caller (materializeEmbeddedResources) already wrote the file to
+		// target; reference it via the hooks section.
+		const event = asString(entry.event) ?? asString(entry.hook_event) ?? asString(entry.hookEvent);
+		if (event) {
+			const hooks = section(config, "hooks") as Record<string, unknown>;
+			const eventHooks = Array.isArray(hooks[event]) ? (hooks[event] as unknown[]) : [];
+			eventHooks.push({ command: relOrAbs });
+			hooks[event] = eventHooks;
+			config.hooks = hooks;
+		}
+	} else if (kind === "settings") {
+		// Merge embedded settings JSON into config.settings.
+		try {
+			const parsed = JSON.parse(readFileSync(target, "utf8"));
+			if (isObject(parsed)) config.settings = deepMerge(section(config, "settings"), parsed);
+		} catch {
+			// best-effort — invalid JSON in embedded settings is ignored
+		}
 	}
 }
 

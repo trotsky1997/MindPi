@@ -8,7 +8,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { inflateSync } from "node:zlib";
 import type { HcpConfig } from "./types.ts";
@@ -107,9 +107,25 @@ export function decodeSessionSnapshot(session: Record<string, unknown>): unknown
 
 export function prepareSessionFromConfig(config: HcpConfig, cwd: string, agentDir: string): string | undefined {
 	const session = section(config, "session");
+	const mode = asString(session.mode);
 	const decoded = decodeSessionSnapshot(session);
 	const snapshotPath = asString(session.snapshot_path) ?? asString(session.snapshotPath);
 	const explicitPath = asString(session.path) ?? asString(session.session_path) ?? asString(session.sessionPath);
+	const sessionDir = asString(session.session_dir) ?? asString(session.sessionDir);
+
+	// continue_recent: find the most recently modified session file and open it.
+	if (mode === "continue_recent" && !decoded && !snapshotPath) {
+		const dir = sessionDir ? resolvePath(sessionDir, cwd) : join(agentDir, "sessions");
+		const recent = findMostRecentSessionFile(dir);
+		if (recent) {
+			session.mode = "open";
+			session.path = recent;
+			config.session = session;
+			return recent;
+		}
+		// No session found — fall through to start a new one.
+	}
+
 	let record: SessionRecord | undefined;
 	if (decoded !== undefined) record = deserializeSessionPayload(decoded);
 	else if (snapshotPath)
@@ -123,6 +139,24 @@ export function prepareSessionFromConfig(config: HcpConfig, cwd: string, agentDi
 	session.path = target;
 	config.session = session;
 	return target;
+}
+
+function findMostRecentSessionFile(dir: string): string | undefined {
+	if (!existsSync(dir)) return undefined;
+	let best: { path: string; mtime: number } | undefined;
+	for (const entry of readdirSync(dir)) {
+		if (!/\.(json|jsonl)$/.test(entry)) continue;
+		const full = join(dir, entry);
+		try {
+			const { mtime, isFile } = statSync(full);
+			if (!isFile()) continue;
+			const ms = mtime.getTime();
+			if (!best || ms > best.mtime) best = { path: full, mtime: ms };
+		} catch {
+			// skip unreadable entries
+		}
+	}
+	return best?.path;
 }
 
 function sessionRecordFromAtif(payload: unknown, path?: string): SessionRecord {
