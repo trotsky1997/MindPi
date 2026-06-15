@@ -7,6 +7,8 @@ import {
 	type AgentSideConnection,
 	type AuthenticateRequest,
 	type CancelNotification,
+	type ForkSessionRequest,
+	type ForkSessionResponse,
 	type InitializeRequest,
 	type InitializeResponse,
 	type ListSessionsRequest,
@@ -30,6 +32,7 @@ import { PiRpcProcess } from "./pi-rpc-inprocess.ts";
 import { findPiSessionFile, listPiSessions } from "./pi-sessions.ts";
 import { getAgentDir, getEnableSkillCommands, getQuietStartup } from "./pi-settings.ts";
 import { SessionManager } from "./session.ts";
+import { SessionManager as PiSessionManager } from "../../core/session-manager.ts";
 import { SessionStore } from "./session-store.ts";
 import { loadSlashCommands, parseCommandArgs, toAvailableCommands } from "./slash-commands.ts";
 import { normalizePiAssistantText, normalizePiMessageText } from "./translate/pi-messages.ts";
@@ -163,6 +166,7 @@ export class PiAcpAgent implements ACPAgent {
 					// **UNSTABLE** ACP capability used by Zed's codex-acp adapter.
 					// Enables a native session picker in clients that support it.
 					list: {},
+					fork: {},
 				},
 			},
 		};
@@ -991,6 +995,102 @@ export class PiAcpAgent implements ACPAgent {
 		}, 0);
 
 		return response;
+	}
+
+	async unstable_forkSession(params: ForkSessionRequest): Promise<ForkSessionResponse> {
+		if (!isAbsolute(params.cwd)) {
+			throw RequestError.invalidParams(`cwd must be an absolute path: ${params.cwd}`);
+		}
+
+		// Resolve the source session file — check store first, then scan disk.
+		const stored = this.store.get(params.sessionId);
+		const sourceSessionFile = stored?.sessionFile ?? findPiSessionFile(params.sessionId);
+		if (!sourceSessionFile) {
+			throw RequestError.invalidParams(`Unknown sessionId: ${params.sessionId}`);
+		}
+
+		// Fork: create a new session file with a new ID, copying source history.
+		// Pass no sessionDir — let forkFrom use the default for params.cwd.
+		let forked: PiSessionManager;
+		try {
+			forked = PiSessionManager.forkFrom(sourceSessionFile, params.cwd);
+		} catch (e: any) {
+			throw RequestError.internalError({}, String(e?.message ?? e));
+		}
+
+		const newSessionId = forked.getSessionId();
+		const forkedSessionFile = forked.getSessionFile();
+		if (!forkedSessionFile) {
+			throw RequestError.internalError({}, "Fork produced no session file");
+		}
+
+		// Spawn pi pointing at the forked session file.
+		let proc: PiRpcProcess;
+		try {
+			proc = await PiRpcProcess.spawn({
+				cwd: params.cwd,
+				sessionPath: forkedSessionFile,
+				piCommand: process.env.PI_ACP_PI_COMMAND,
+			});
+		} catch (e: any) {
+			if (e?.name === "PiRpcSpawnError") {
+				throw RequestError.internalError({ code: e?.code }, String(e?.message ?? e));
+			}
+			throw e;
+		}
+
+		const fileCommands = loadSlashCommands(params.cwd);
+		const enableSkillCommands = getEnableSkillCommands(params.cwd);
+
+		const session = this.sessions.getOrCreate(newSessionId, {
+			cwd: params.cwd,
+			mcpServers: params.mcpServers ?? [],
+			conn: this.conn,
+			proc,
+			fileCommands,
+		});
+
+		this.store.upsert({
+			sessionId: newSessionId,
+			cwd: params.cwd,
+			sessionFile: forkedSessionFile,
+		});
+
+		this.lastSessionCwd = params.cwd;
+
+		// Policy: keep only one live subprocess per ACP connection.
+		(this.sessions as any).closeAllExcept?.(newSessionId);
+
+		// Advertise slash commands after response is delivered.
+		setTimeout(() => {
+			void (async () => {
+				try {
+					const pi = (await session.proc.getCommands()) as any;
+					const { commands } = toAvailableCommandsFromPiGetCommands(pi, {
+						enableSkillCommands,
+						includeExtensionCommands: false,
+					});
+					await this.conn.sessionUpdate({
+						sessionId: newSessionId,
+						update: {
+							sessionUpdate: "available_commands_update",
+							availableCommands: mergeCommands(commands, builtinAvailableCommands()),
+						},
+					});
+				} catch {
+					// best-effort
+				}
+			})();
+		}, 0);
+
+		const models = await getModelState(proc).catch(() => null);
+		const thinking = await getThinkingState(proc).catch(() => null);
+
+		return {
+			sessionId: newSessionId,
+			models: models ?? undefined,
+			modes: thinking ?? undefined,
+		};
 	}
 
 	async unstable_setSessionModel(params: { sessionId: string; modelId: string }): Promise<void> {
