@@ -42,7 +42,7 @@
 		"@earendil-works/pi-tui": "^0.79.1",
 		"@iarna/toml": "2.2.5",
 		"@modelcontextprotocol/ext-apps": "1.2.2",
-		"@modelcontextprotocol/sdk": "1.25.1",
+		"@modelcontextprotocol/sdk": "1.26.0",
 		"@silvia-odwyer/photon-node": "0.3.4",
 		"chalk": "5.6.2",
 		"cross-spawn": "7.0.6",
@@ -79,7 +79,7 @@
 		"@types/semver": "7.7.1",
 		"shx": "0.4.0",
 		"typescript": "5.9.3",
-		"vitest": "3.2.4"
+		"vitest": "3.2.6"
 	},
 	"keywords": [
 		"coding-agent",
