@@ -42,24 +42,24 @@ afterEach(() => {
 });
 
 describe("HCP [env] handling", () => {
-	it("loads .env files and exposes required vars", () => {
+	it("loads .env files and exposes required vars", async () => {
 		const dir = makeDir();
 		writeFileSync(join(dir, ".env"), "HCP_FILE_VAR=from_file\n", "utf8");
 		const path = writeConfig(dir, 'version = 1\n[env]\nfiles = [".env"]\nrequired = ["HCP_FILE_VAR"]\n');
-		const prep = prepareHcpRuntime(path);
+		const prep = await prepareHcpRuntime(path);
 		expect(prep.env.HCP_FILE_VAR).toBe("from_file");
 	});
 
-	it("process env wins over file when override is not set", () => {
+	it("process env wins over file when override is not set", async () => {
 		const dir = makeDir();
 		setEnv("HCP_PROC_VAR", "from_process");
 		writeFileSync(join(dir, ".env"), "HCP_PROC_VAR=from_file\n", "utf8");
 		const path = writeConfig(dir, 'version = 1\n[env]\nfiles = [".env"]\nrequired = ["HCP_PROC_VAR"]\n');
-		const prep = prepareHcpRuntime(path);
+		const prep = await prepareHcpRuntime(path);
 		expect(prep.env.HCP_PROC_VAR).toBe("from_process");
 	});
 
-	it("file wins over process env when override = true", () => {
+	it("file wins over process env when override = true", async () => {
 		const dir = makeDir();
 		setEnv("HCP_PROC_VAR", "from_process");
 		writeFileSync(join(dir, ".env"), "HCP_PROC_VAR=from_file\n", "utf8");
@@ -67,43 +67,43 @@ describe("HCP [env] handling", () => {
 			dir,
 			'version = 1\n[env]\nfiles = [".env"]\noverride = true\nrequired = ["HCP_PROC_VAR"]\n',
 		);
-		const prep = prepareHcpRuntime(path);
+		const prep = await prepareHcpRuntime(path);
 		expect(prep.env.HCP_PROC_VAR).toBe("from_file");
 	});
 
-	it("[env.set] values always win and are exported", () => {
+	it("[env.set] values always win and are exported", async () => {
 		const dir = makeDir();
 		setEnv("HCP_PROC_VAR", "from_process");
 		const path = writeConfig(
 			dir,
 			'version = 1\n[env]\n[env.set]\nHCP_PROC_VAR = "from_set"\nPI_SKIP_VERSION_CHECK = "1"\n',
 		);
-		const prep = prepareHcpRuntime(path);
+		const prep = await prepareHcpRuntime(path);
 		expect(prep.env.HCP_PROC_VAR).toBe("from_set");
 		expect(prep.env.PI_SKIP_VERSION_CHECK).toBe("1");
 	});
 
-	it("optional vars are included only when present", () => {
+	it("optional vars are included only when present", async () => {
 		const dir = makeDir();
 		const path = writeConfig(dir, 'version = 1\n[env]\noptional = ["HCP_OPT_VAR"]\n');
 		// not set -> absent (no throw)
-		expect(prepareHcpRuntime(path).env.HCP_OPT_VAR).toBeUndefined();
+		expect((await prepareHcpRuntime(path)).env.HCP_OPT_VAR).toBeUndefined();
 		// set -> present
 		setEnv("HCP_OPT_VAR", "yes");
-		expect(prepareHcpRuntime(path).env.HCP_OPT_VAR).toBe("yes");
+		expect((await prepareHcpRuntime(path)).env.HCP_OPT_VAR).toBe("yes");
 	});
 
-	it("offline sets PI_OFFLINE and PI_SKIP_VERSION_CHECK", () => {
+	it("offline sets PI_OFFLINE and PI_SKIP_VERSION_CHECK", async () => {
 		const dir = makeDir();
 		const path = writeConfig(dir, "version = 1\n[run]\noffline = true\n");
-		const prep = prepareHcpRuntime(path);
+		const prep = await prepareHcpRuntime(path);
 		expect(prep.env.PI_OFFLINE).toBe("1");
 		expect(prep.env.PI_SKIP_VERSION_CHECK).toBe("1");
 	});
 
-	it("throws when a required env file is missing", () => {
+	it("throws when a required env file is missing", async () => {
 		const dir = makeDir();
 		const path = writeConfig(dir, 'version = 1\n[env]\nfiles = ["does-not-exist.env"]\n');
-		expect(() => prepareHcpRuntime(path)).toThrow(/Environment file not found/);
+		await expect(prepareHcpRuntime(path)).rejects.toThrow(/Environment file not found/);
 	});
 });

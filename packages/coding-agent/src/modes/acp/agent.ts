@@ -25,6 +25,7 @@ import {
 	type SetSessionModeResponse,
 	type StopReason,
 } from "@agentclientprotocol/sdk";
+import { SessionManager as PiSessionManager } from "../../core/session-manager.ts";
 import { getAuthMethods } from "./auth.ts";
 import { maybeAuthRequiredError } from "./auth-required.ts";
 import { toAvailableCommandsFromPiGetCommands } from "./pi-commands.ts";
@@ -32,7 +33,6 @@ import { PiRpcProcess } from "./pi-rpc-inprocess.ts";
 import { findPiSessionFile, listPiSessions } from "./pi-sessions.ts";
 import { getAgentDir, getEnableSkillCommands, getQuietStartup } from "./pi-settings.ts";
 import { SessionManager } from "./session.ts";
-import { SessionManager as PiSessionManager } from "../../core/session-manager.ts";
 import { SessionStore } from "./session-store.ts";
 import { loadSlashCommands, parseCommandArgs, toAvailableCommands } from "./slash-commands.ts";
 import { normalizePiAssistantText, normalizePiMessageText } from "./translate/pi-messages.ts";

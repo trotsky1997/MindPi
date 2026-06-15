@@ -13,9 +13,9 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import TOML from "@iarna/toml";
+import { lookupModelsDevModel, modelsDevToHcpDefaults } from "./models-dev.ts";
 import { prepareSessionFromConfig } from "./session.ts";
 import type { HcpConfig, HcpPreparation, HcpSyntheticArgs } from "./types.ts";
-import { lookupModelsDevModel, modelsDevToHcpDefaults } from "./models-dev.ts";
 import {
 	asBool,
 	asString,
@@ -66,7 +66,10 @@ export interface PrepareHcpRuntimeOptions {
 	strictWorkspace?: boolean;
 }
 
-export async function prepareHcpRuntime(configPath: string, options: PrepareHcpRuntimeOptions = {}): Promise<HcpPreparation> {
+export async function prepareHcpRuntime(
+	configPath: string,
+	options: PrepareHcpRuntimeOptions = {},
+): Promise<HcpPreparation> {
 	const resolvedConfigPath = resolve(configPath);
 	const config = loadHcpToml(resolvedConfigPath);
 	const warnings: string[] = [];
@@ -399,7 +402,10 @@ function noToolsMode(config: HcpConfig, tools: string[] | undefined): "all" | "b
 	return undefined;
 }
 
-async function buildModelsJson(config: HcpConfig, env: NodeJS.ProcessEnv): Promise<Record<string, unknown> | undefined> {
+async function buildModelsJson(
+	config: HcpConfig,
+	env: NodeJS.ProcessEnv,
+): Promise<Record<string, unknown> | undefined> {
 	const model = section(config, "model");
 	const provider = asString(model.provider);
 	const id =
@@ -440,7 +446,9 @@ async function buildModelsJson(config: HcpConfig, env: NodeJS.ProcessEnv): Promi
 	if (!needs.some((key) => key in effectiveModel)) return undefined;
 
 	const baseUrl =
-		asString(effectiveModel.base_url) ?? asString(effectiveModel.baseUrl) ?? envLookup(effectiveModel.base_url_env ?? effectiveModel.baseUrlEnv, env);
+		asString(effectiveModel.base_url) ??
+		asString(effectiveModel.baseUrl) ??
+		envLookup(effectiveModel.base_url_env ?? effectiveModel.baseUrlEnv, env);
 	const apiKeyEnv = asString(effectiveModel.api_key_env) ?? asString(effectiveModel.apiKeyEnv);
 	if (!baseUrl) throw new Error("model.base_url or model.base_url_env is required for custom provider models");
 	if (!apiKeyEnv) throw new Error("model.api_key_env is required for custom provider models");
@@ -478,7 +486,9 @@ async function buildModelsJson(config: HcpConfig, env: NodeJS.ProcessEnv): Promi
 						input: stringList(effectiveModel.input).length ? stringList(effectiveModel.input) : ["text"],
 						contextWindow: Number(effectiveModel.context_window ?? effectiveModel.contextWindow ?? 128000),
 						maxTokens: Number(effectiveModel.max_tokens ?? effectiveModel.maxTokens ?? 16384),
-						cost: isObject(effectiveModel.cost) ? effectiveModel.cost : { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+						cost: isObject(effectiveModel.cost)
+							? effectiveModel.cost
+							: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 						compat: Object.keys(modelCompat).length ? deepMerge(compat, modelCompat) : compat,
 					},
 				],
@@ -497,7 +507,12 @@ function buildAuthJson(config: HcpConfig, env: NodeJS.ProcessEnv, cwd: string, a
 	const authPath = explicitPath ? resolvePath(explicitPath, cwd) : join(agentDir, "auth.json");
 	let data = readJsonIfExists(authPath);
 	if (provider && apiKey) data = { ...data, [provider]: { type: "api_key", key: apiKey } };
-	else if (provider && apiKeyEnv && !(model.base_url ?? model.baseUrl ?? model.base_url_env ?? model.baseUrlEnv ?? model.models_dev) && env[apiKeyEnv])
+	else if (
+		provider &&
+		apiKeyEnv &&
+		!(model.base_url ?? model.baseUrl ?? model.base_url_env ?? model.baseUrlEnv ?? model.models_dev) &&
+		env[apiKeyEnv]
+	)
 		data = { ...data, [provider]: { type: "api_key", key: apiKeyEnv } };
 	if (Object.keys(data).length) writeJson(authPath, data, 0o600);
 }
@@ -604,7 +619,8 @@ function applyEmbeddedReference(config: HcpConfig, entry: Record<string, unknown
 			const eventHooks = Array.isArray(hooks[event]) ? (hooks[event] as unknown[]) : [];
 			// command_path_index: rewrite that arg index in an existing command string
 			// to the materialized path (RFC §Hooks).
-			const pathIndex = typeof entry.command_path_index === "number" ? (entry.command_path_index as number) : undefined;
+			const pathIndex =
+				typeof entry.command_path_index === "number" ? (entry.command_path_index as number) : undefined;
 			const rawCommand = asString(entry.command);
 			if (pathIndex !== undefined && rawCommand) {
 				const parts = rawCommand.split(/\s+/);

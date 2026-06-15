@@ -45,9 +45,7 @@ export interface ModelsDevModel {
 		reasoning?: number;
 	};
 	reasoning_options?: Array<
-		| { type: "toggle" }
-		| { type: "effort"; values?: string[] }
-		| { type: "budget_tokens"; min?: number; max?: number }
+		{ type: "toggle" } | { type: "effort"; values?: string[] } | { type: "budget_tokens"; min?: number; max?: number }
 	>;
 }
 

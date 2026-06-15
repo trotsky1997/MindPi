@@ -131,7 +131,7 @@ export function prepareSessionFromConfig(config: HcpConfig, cwd: string, agentDi
 
 	// open: path is required.
 	if (mode === "open" && !explicitPath && !decoded && !snapshotPath)
-		throw new Error("session.mode = \"open\" requires session.path, session_path, or a snapshot");
+		throw new Error('session.mode = "open" requires session.path, session_path, or a snapshot');
 
 	let record: SessionRecord | undefined;
 	if (decoded !== undefined) record = deserializeSessionPayload(decoded);

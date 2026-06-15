@@ -32,20 +32,20 @@ afterEach(() => {
 });
 
 describe("loadHcpToml", () => {
-	it("parses a version 1 config", () => {
+	it("parses a version 1 config", async () => {
 		const dir = makeDir();
 		const path = writeConfig(dir, 'version = 1\n[run]\ncwd = "."\n');
 		const config = loadHcpToml(path);
 		expect(config.version).toBe(1);
 	});
 
-	it("defaults version to 1 when omitted", () => {
+	it("defaults version to 1 when omitted", async () => {
 		const dir = makeDir();
 		const path = writeConfig(dir, '[run]\ncwd = "."\n');
 		expect(loadHcpToml(path).version ?? 1).toBe(1);
 	});
 
-	it("rejects unsupported versions", () => {
+	it("rejects unsupported versions", async () => {
 		const dir = makeDir();
 		const path = writeConfig(dir, "version = 2\n");
 		expect(() => loadHcpToml(path)).toThrow(/Unsupported HCP version/);
@@ -53,7 +53,7 @@ describe("loadHcpToml", () => {
 });
 
 describe("prepareHcpRuntime - model + env", () => {
-	it("builds settings, models.json, and env from a minimal openai config", () => {
+	it("builds settings, models.json, and env from a minimal openai config", async () => {
 		const dir = makeDir();
 		writeFileSync(join(dir, ".env"), "OPENAI_API_KEY=sk-from-file\n", "utf8");
 		const path = writeConfig(
@@ -78,7 +78,7 @@ max_tokens = 16000
 allow = []
 `,
 		);
-		const prep = prepareHcpRuntime(path);
+		const prep = await prepareHcpRuntime(path);
 		const settings = readJson(join(prep.agentDir, "settings.json"));
 		expect(settings.defaultProvider).toBe("openai");
 		expect(settings.defaultModel).toBe("gpt-4o-mini");
@@ -96,7 +96,7 @@ allow = []
 		expect(prep.syntheticArgs.model).toBe("gpt-4o-mini");
 	});
 
-	it("throws when a required env var is missing", () => {
+	it("throws when a required env var is missing", async () => {
 		const dir = makeDir();
 		const path = writeConfig(
 			dir,
@@ -105,10 +105,10 @@ allow = []
 required = ["MISSING_REQUIRED_VAR_XYZ"]
 `,
 		);
-		expect(() => prepareHcpRuntime(path)).toThrow(/Missing required environment variables/);
+		await expect(prepareHcpRuntime(path)).rejects.toThrow(/Missing required environment variables/);
 	});
 
-	it("injects a direct api_key as a generated env var", () => {
+	it("injects a direct api_key as a generated env var", async () => {
 		const dir = makeDir();
 		const path = writeConfig(
 			dir,
@@ -119,7 +119,7 @@ id = "some-model"
 api_key = "sk-direct-secret"
 `,
 		);
-		const prep = prepareHcpRuntime(path);
+		const prep = await prepareHcpRuntime(path);
 		expect(prep.env.PI_HCP_NOVITA_API_KEY).toBe("sk-direct-secret");
 		// Direct keys land in auth.json (0600), not models.json.
 		const auth = readJson(join(prep.agentDir, "auth.json")) as Record<string, { key: string }>;
@@ -128,22 +128,22 @@ api_key = "sk-direct-secret"
 });
 
 describe("prepareHcpRuntime - tools", () => {
-	function toolArgs(toml: string) {
+	async function toolArgs(toml: string) {
 		const dir = makeDir();
 		const path = writeConfig(dir, `version = 1\n${toml}`);
-		return prepareHcpRuntime(path).syntheticArgs;
+		return (await prepareHcpRuntime(path)).syntheticArgs;
 	}
 
-	it("maps an allowlist to tools", () => {
-		expect(toolArgs('[tools]\nallow = ["read", "bash"]\n').tools).toEqual(["read", "bash"]);
+	it("maps an allowlist to tools", async () => {
+		expect((await toolArgs('[tools]\nallow = ["read", "bash"]\n')).tools).toEqual(["read", "bash"]);
 	});
 
-	it("maps an empty array to noTools", () => {
-		expect(toolArgs("tools = []\n").noTools).toBe(true);
+	it("maps an empty array to noTools", async () => {
+		expect((await toolArgs("tools = []\n")).noTools).toBe(true);
 	});
 
-	it("maps builtin = false to noBuiltinTools", () => {
-		expect(toolArgs("[tools]\nbuiltin = false\n").noBuiltinTools).toBe(true);
+	it("maps builtin = false to noBuiltinTools", async () => {
+		expect((await toolArgs("[tools]\nbuiltin = false\n")).noBuiltinTools).toBe(true);
 	});
 });
 
@@ -161,25 +161,25 @@ sha256 = "${sha}"
 `;
 	}
 
-	it("materializes embedded content with a valid sha256", () => {
+	it("materializes embedded content with a valid sha256", async () => {
 		const dir = makeDir();
 		const content = "# Risk Skill";
 		const sha = createHash("sha256").update(Buffer.from(content, "utf8")).digest("hex");
 		const path = writeConfig(dir, embeddedConfig(content, sha));
-		const prep = prepareHcpRuntime(path);
+		const prep = await prepareHcpRuntime(path);
 		const target = join(prep.cwd, ".hcp-embedded", ".pi/skills/risk/SKILL.md");
 		expect(readFileSync(target, "utf8")).toBe(content);
 		const settings = readJson(join(prep.agentDir, "settings.json")) as { skills?: string[] };
 		expect(settings.skills?.some((s) => s.endsWith("SKILL.md"))).toBe(true);
 	});
 
-	it("rejects a checksum mismatch", () => {
+	it("rejects a checksum mismatch", async () => {
 		const dir = makeDir();
 		const path = writeConfig(dir, embeddedConfig("# Risk Skill", "0".repeat(64)));
-		expect(() => prepareHcpRuntime(path)).toThrow(/checksum mismatch/);
+		await expect(prepareHcpRuntime(path)).rejects.toThrow(/checksum mismatch/);
 	});
 
-	it("rejects a path traversal attempt", () => {
+	it("rejects a path traversal attempt", async () => {
 		const dir = makeDir();
 		const content = "x";
 		const sha = createHash("sha256").update(Buffer.from(content, "utf8")).digest("hex");
@@ -195,12 +195,12 @@ content = "${content}"
 sha256 = "${sha}"
 `,
 		);
-		expect(() => prepareHcpRuntime(path)).toThrow(/Invalid embedded resource path/);
+		await expect(prepareHcpRuntime(path)).rejects.toThrow(/Invalid embedded resource path/);
 	});
 });
 
 describe("prepareHcpRuntime - mcp + hooks", () => {
-	it("writes mcp.json and enables the adapter package", () => {
+	it("writes mcp.json and enables the adapter package", async () => {
 		const dir = makeDir();
 		const path = writeConfig(
 			dir,
@@ -213,7 +213,7 @@ command = "node"
 args = ["server.js"]
 `,
 		);
-		const prep = prepareHcpRuntime(path);
+		const prep = await prepareHcpRuntime(path);
 		const mcp = readJson(join(prep.agentDir, "mcp.json")) as {
 			mcpServers: Record<string, { command: string }>;
 		};
@@ -228,7 +228,7 @@ args = ["server.js"]
 		expect(settings.builtinExtensions).toContain("mcp");
 	});
 
-	it("rejects sandbox placement", () => {
+	it("rejects sandbox placement", async () => {
 		const dir = makeDir();
 		const path = writeConfig(
 			dir,
@@ -239,10 +239,10 @@ command = "node"
 placement = "sandbox"
 `,
 		);
-		expect(() => prepareHcpRuntime(path)).toThrow(/placement=sandbox is not supported/);
+		await expect(prepareHcpRuntime(path)).rejects.toThrow(/placement=sandbox is not supported/);
 	});
 
-	it("normalizes hooks into settings (hooks is a native built-in)", () => {
+	it("normalizes hooks into settings (hooks is a native built-in)", async () => {
 		const dir = makeDir();
 		const path = writeConfig(
 			dir,
@@ -254,7 +254,7 @@ timeout = 2
 run_async = true
 `,
 		);
-		const prep = prepareHcpRuntime(path);
+		const prep = await prepareHcpRuntime(path);
 		const settings = readJson(join(prep.agentDir, "settings.json")) as {
 			hooks?: { PreToolUse: { name: string; matcher: string; hooks: { command: string; async?: boolean }[] }[] };
 			packages?: { source: string }[];
@@ -269,7 +269,7 @@ run_async = true
 		expect((settings as { builtinExtensions?: string[] }).builtinExtensions).toContain("hooks");
 	});
 
-	it("enables built-ins via settings.builtinExtensions, honoring [hcp_extensions]", () => {
+	it("enables built-ins via settings.builtinExtensions, honoring [hcp_extensions]", async () => {
 		const dir = makeDir();
 		const path = writeConfig(
 			dir,
@@ -283,7 +283,7 @@ command = "node"
 command = "echo hi"
 `,
 		);
-		const prep = prepareHcpRuntime(path);
+		const prep = await prepareHcpRuntime(path);
 		const settings = readJson(join(prep.agentDir, "settings.json")) as { builtinExtensions?: string[] };
 		// hooks present -> enabled; mcp present but disabled by flag -> not enabled.
 		expect(settings.builtinExtensions).toContain("hooks");
@@ -292,7 +292,7 @@ command = "echo hi"
 });
 
 describe("prepareHcpRuntime - workspace", () => {
-	it("validates and warns without staging", () => {
+	it("validates and warns without staging", async () => {
 		const dir = makeDir();
 		writeFileSync(join(dir, "data.txt"), "hi", "utf8");
 		const path = writeConfig(
@@ -307,11 +307,11 @@ target = "data.txt"
 mode = "copy"
 `,
 		);
-		const prep = prepareHcpRuntime(path);
+		const prep = await prepareHcpRuntime(path);
 		expect(prep.warnings.some((w) => w.includes("not staged"))).toBe(true);
 	});
 
-	it("throws on a missing required local source", () => {
+	it("throws on a missing required local source", async () => {
 		const dir = makeDir();
 		const path = writeConfig(
 			dir,
@@ -324,6 +324,6 @@ target = "data.txt"
 mode = "copy"
 `,
 		);
-		expect(() => prepareHcpRuntime(path)).toThrow(/Required workspace source not found/);
+		await expect(prepareHcpRuntime(path)).rejects.toThrow(/Required workspace source not found/);
 	});
 });

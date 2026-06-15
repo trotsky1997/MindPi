@@ -35,7 +35,7 @@ afterEach(() => {
 });
 
 describe("applyHcpPreparation", () => {
-	it("merges synthetic args but lets explicit CLI args win", () => {
+	it("merges synthetic args but lets explicit CLI args win", async () => {
 		const dir = makeDir();
 		writeFileSync(
 			join(dir, "hcp.toml"),
@@ -46,7 +46,7 @@ id = "gpt-4o-mini"
 `,
 			"utf8",
 		);
-		const prep = prepareHcpRuntime(join(dir, "hcp.toml"));
+		const prep = await prepareHcpRuntime(join(dir, "hcp.toml"));
 		// User explicitly set a model on the CLI; HCP must not override it.
 		const args = baseArgs({ model: "user-chosen-model" });
 		applyHcpPreparation(args, prep);
@@ -57,10 +57,10 @@ id = "gpt-4o-mini"
 });
 
 describe("todo built-in", () => {
-	it("is enabled when tools.todo = true", () => {
+	it("is enabled when tools.todo = true", async () => {
 		const dir = makeDir();
 		writeFileSync(join(dir, "hcp.toml"), "version = 1\n[tools]\ntodo = true\n", "utf8");
-		const prep = prepareHcpRuntime(join(dir, "hcp.toml"));
+		const prep = await prepareHcpRuntime(join(dir, "hcp.toml"));
 		const settings = JSON.parse(readFileSync(join(prep.agentDir, "settings.json"), "utf8")) as {
 			packages?: { source: string }[];
 			builtinExtensions?: string[];
@@ -69,24 +69,24 @@ describe("todo built-in", () => {
 		expect(settings.builtinExtensions).toContain("todo");
 	});
 
-	it("is not enabled for a plain config (built-ins are off by default)", () => {
+	it("is not enabled for a plain config (built-ins are off by default)", async () => {
 		const dir = makeDir();
 		writeFileSync(join(dir, "hcp.toml"), 'version = 1\n[model]\nprovider = "openai"\nid = "x"\n', "utf8");
-		const prep = prepareHcpRuntime(join(dir, "hcp.toml"));
+		const prep = await prepareHcpRuntime(join(dir, "hcp.toml"));
 		const settings = JSON.parse(readFileSync(join(prep.agentDir, "settings.json"), "utf8")) as {
 			builtinExtensions?: string[];
 		};
 		expect(settings.builtinExtensions ?? []).not.toContain("todo");
 	});
 
-	it("is not enabled when [hcp_extensions].todo = false", () => {
+	it("is not enabled when [hcp_extensions].todo = false", async () => {
 		const dir = makeDir();
 		writeFileSync(
 			join(dir, "hcp.toml"),
 			"version = 1\n[tools]\ntodo = true\n[hcp_extensions]\ntodo = false\n",
 			"utf8",
 		);
-		const prep = prepareHcpRuntime(join(dir, "hcp.toml"));
+		const prep = await prepareHcpRuntime(join(dir, "hcp.toml"));
 		const settings = JSON.parse(readFileSync(join(prep.agentDir, "settings.json"), "utf8")) as {
 			builtinExtensions?: string[];
 		};
