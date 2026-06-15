@@ -113,6 +113,9 @@ export function prepareSessionFromConfig(config: HcpConfig, cwd: string, agentDi
 	const explicitPath = asString(session.path) ?? asString(session.session_path) ?? asString(session.sessionPath);
 	const sessionDir = asString(session.session_dir) ?? asString(session.sessionDir);
 
+	// in_memory / create: no persistent session file — snapshots still allowed.
+	if ((mode === "in_memory" || mode === "create") && !decoded && !snapshotPath) return undefined;
+
 	// continue_recent: find the most recently modified session file and open it.
 	if (mode === "continue_recent" && !decoded && !snapshotPath) {
 		const dir = sessionDir ? resolvePath(sessionDir, cwd) : join(agentDir, "sessions");

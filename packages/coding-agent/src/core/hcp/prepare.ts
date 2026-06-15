@@ -101,7 +101,7 @@ export async function prepareHcpRuntime(configPath: string, options: PrepareHcpR
 
 	const modelsJson = await buildModelsJson(config, env);
 	if (modelsJson) writeJson(join(agentDir, "models.json"), modelsJson);
-	buildAuthJson(config, env, agentDir);
+	buildAuthJson(config, env, cwd, agentDir);
 	writeMcpConfig(config, cwd, agentDir, warnings);
 
 	const syntheticArgs = buildSyntheticArgs(config, cwd);
@@ -487,14 +487,14 @@ async function buildModelsJson(config: HcpConfig, env: NodeJS.ProcessEnv): Promi
 	};
 }
 
-function buildAuthJson(config: HcpConfig, env: NodeJS.ProcessEnv, agentDir: string): void {
+function buildAuthJson(config: HcpConfig, env: NodeJS.ProcessEnv, cwd: string, agentDir: string): void {
 	const auth = section(config, "auth");
 	const model = section(config, "model");
 	const provider = asString(model.provider);
 	const apiKey = asString(model.api_key) ?? asString(model.apiKey);
 	const apiKeyEnv = asString(model.api_key_env) ?? asString(model.apiKeyEnv);
 	const explicitPath = asString(auth.path);
-	const authPath = explicitPath ? resolvePath(explicitPath, agentDir) : join(agentDir, "auth.json");
+	const authPath = explicitPath ? resolvePath(explicitPath, cwd) : join(agentDir, "auth.json");
 	let data = readJsonIfExists(authPath);
 	if (provider && apiKey) data = { ...data, [provider]: { type: "api_key", key: apiKey } };
 	else if (provider && apiKeyEnv && !(model.base_url ?? model.baseUrl ?? model.base_url_env ?? model.baseUrlEnv ?? model.models_dev) && env[apiKeyEnv])

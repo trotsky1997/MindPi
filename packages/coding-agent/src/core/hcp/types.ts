@@ -22,6 +22,7 @@ export type HcpConfig = JsonObject & {
 	providerOptions?: JsonObject;
 	tools?: unknown;
 	extensions?: JsonObject;
+	hcp_extensions?: JsonObject;
 	skills?: JsonObject;
 	prompts?: JsonObject;
 	prompt_templates?: JsonObject;
