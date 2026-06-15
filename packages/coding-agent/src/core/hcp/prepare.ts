@@ -597,15 +597,22 @@ function applyEmbeddedReference(config: HcpConfig, entry: Record<string, unknown
 		config.resources = resources;
 	} else if (kind === "hook") {
 		// Embedded hook files land in agentDir/hooks/<event>/<filename>.
-		// We defer to normalizeHooks — here we just register the path as an
-		// extension so the hooks built-in can pick it up via its config file.
-		// The caller (materializeEmbeddedResources) already wrote the file to
-		// target; reference it via the hooks section.
+		// Register the materialized path as a hook command for the given event.
 		const event = asString(entry.event) ?? asString(entry.hook_event) ?? asString(entry.hookEvent);
 		if (event) {
 			const hooks = section(config, "hooks") as Record<string, unknown>;
 			const eventHooks = Array.isArray(hooks[event]) ? (hooks[event] as unknown[]) : [];
-			eventHooks.push({ command: relOrAbs });
+			// command_path_index: rewrite that arg index in an existing command string
+			// to the materialized path (RFC §Hooks).
+			const pathIndex = typeof entry.command_path_index === "number" ? (entry.command_path_index as number) : undefined;
+			const rawCommand = asString(entry.command);
+			if (pathIndex !== undefined && rawCommand) {
+				const parts = rawCommand.split(/\s+/);
+				parts[pathIndex] = relOrAbs;
+				eventHooks.push({ command: parts.join(" ") });
+			} else {
+				eventHooks.push({ command: relOrAbs });
+			}
 			hooks[event] = eventHooks;
 			config.hooks = hooks;
 		}
@@ -617,6 +624,12 @@ function applyEmbeddedReference(config: HcpConfig, entry: Record<string, unknown
 		} catch {
 			// best-effort — invalid JSON in embedded settings is ignored
 		}
+	} else if (kind === "mcp" || kind === "mcp_adapter") {
+		// Register the materialized MCP config/adapter path into mcp.config_path
+		// when no existing MCP config is set.
+		if (!isObject(config.mcp)) config.mcp = {};
+		const mcp = config.mcp as Record<string, unknown>;
+		if (!mcp.config_path && !mcp.configPath) mcp.config_path = target;
 	}
 }
 
