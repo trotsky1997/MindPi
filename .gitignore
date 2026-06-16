@@ -39,3 +39,8 @@ plans/
 .pi/hf-sessions/
 .pi/hf-sessions-backup/
 collect.sh
+
+# Local runtime artifacts (may contain secrets / are generated per-run)
+pi_models.json
+.pi/skills/skill-create/
+.pi/skills/skill-update/
