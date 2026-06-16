@@ -62,11 +62,26 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd packages/coding-agent/binaries
-          ARTIFACTS="mindpi-darwin-arm64.tar.gz mindpi-darwin-x64.tar.gz mindpi-linux-x64.tar.gz mindpi-linux-arm64.tar.gz mindpi-windows-x64.zip mindpi-windows-arm64.zip"
+
+          release_assets=(
+            mindpi-darwin-arm64.tar.gz
+            mindpi-darwin-x64.tar.gz
+            mindpi-linux-x64.tar.gz
+            mindpi-linux-arm64.tar.gz
+            mindpi-windows-x64.zip
+            mindpi-windows-arm64.zip
+          )
+          sha256sum "${release_assets[@]}" > SHA256SUMS
+          release_assets+=(SHA256SUMS)
 
           if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
-            gh release edit "${RELEASE_TAG}" --title "MindPi ${RELEASE_TAG}" --notes-file /tmp/release-notes.md
-            gh release upload "${RELEASE_TAG}" $ARTIFACTS --clobber
+            gh release edit "${RELEASE_TAG}" \
+              --title "MindPi ${RELEASE_TAG}" \
+              --notes-file /tmp/release-notes.md
+            gh release upload "${RELEASE_TAG}" "${release_assets[@]}" --clobber
           else
-            gh release create "${RELEASE_TAG}" --title "MindPi ${RELEASE_TAG}" --notes-file /tmp/release-notes.md $ARTIFACTS
+            gh release create "${RELEASE_TAG}" \
+              --title "MindPi ${RELEASE_TAG}" \
+              --notes-file /tmp/release-notes.md \
+              "${release_assets[@]}"
           fi
